@@ -39,7 +39,7 @@ type Client struct {
 // and uses that broker to automatically fetch metadata on the rest of the kafka cluster. If metadata cannot
 // be retrieved from any of the given broker addresses, the client is not created.
 func NewClient(id string, addrs []string, config *ClientConfig) (*Client, error) {
-	Logger.Println("Initializing new client")
+	Logger.Println("client/initialize :: starting client")
 
 	if config == nil {
 		config = NewClientConfig()
@@ -72,14 +72,14 @@ func NewClient(id string, addrs []string, config *ClientConfig) (*Client, error)
 		break
 	case LeaderNotAvailable, ReplicaNotAvailable:
 		// indicates that maybe part of the cluster is down, but is not fatal to creating the client
-		Logger.Println(err)
+		Logger.Printf("client/initialize :: %s\n", err)
 	default:
 		_ = client.Close()
 		return nil, err
 	}
 	go withRecover(client.backgroundMetadataUpdater)
 
-	Logger.Println("Successfully initialized new client")
+	Logger.Println("client/initialize :: success")
 
 	return client, nil
 }
@@ -92,13 +92,13 @@ func (client *Client) Close() error {
 	if client.Closed() {
 		// Chances are this is being called from a defer() and the error will go unobserved
 		// so we go ahead and log the event in this case.
-		Logger.Printf("Close() called on already closed client")
+		Logger.Println("client/close :: Close() called on already closed client")
 		return ClosedClient
 	}
 
 	client.lock.Lock()
 	defer client.lock.Unlock()
-	Logger.Println("Closing Client")
+	Logger.Println("client/close :: Close() initiated")
 
 	for _, broker := range client.brokers {
 		safeAsyncClose(broker)
@@ -307,7 +307,7 @@ func (client *Client) GetOffset(topic string, partitionID int32, where OffsetTim
 func (client *Client) disconnectBroker(broker *Broker) {
 	client.lock.Lock()
 	defer client.lock.Unlock()
-	Logger.Printf("Disconnecting Broker %d\n", broker.ID())
+	Logger.Printf("client/metadata :: disconnecting broker %d\n", broker.ID())
 
 	client.deadBrokerAddrs[broker.addr] = none{}
 
@@ -350,7 +350,7 @@ func (client *Client) refreshMetadata(topics []string, retriesRemaining int) err
 	}
 
 	for broker := client.any(); broker != nil; broker = client.any() {
-		Logger.Printf("Fetching metadata from broker %s\n", broker.addr)
+		Logger.Printf("client/metadata :: fetching metadata from broker %s\n", broker.addr)
 		response, err := broker.GetMetadata(client.id, &MetadataRequest{Topics: topics})
 
 		switch err {
@@ -363,7 +363,7 @@ func (client *Client) refreshMetadata(topics []string, retriesRemaining int) err
 					Logger.Println("Some partitions are leaderless, but we're out of retries")
 					return nil
 				}
-				Logger.Printf("Some partitions are leaderless, waiting %dms for election... (%d retries remaining)\n", client.config.WaitForElection/time.Millisecond, retriesRemaining)
+				Logger.Printf("client/metadata :: some partitions are leaderless, waiting %dms for election... (%d retries remaining)\n", client.config.WaitForElection/time.Millisecond, retriesRemaining)
 				time.Sleep(client.config.WaitForElection) // wait for leader election
 				return client.refreshMetadata(retry, retriesRemaining-1)
 			}
@@ -374,15 +374,15 @@ func (client *Client) refreshMetadata(topics []string, retriesRemaining int) err
 			return err
 		default:
 			// some other error, remove that broker and try again
-			Logger.Println("Error from broker while fetching metadata:", err)
+			Logger.Printf("client/metadata :: error from broker %s: %s\n", broker.Addr(), err)
 			client.disconnectBroker(broker)
 		}
 	}
 
-	Logger.Println("Out of available brokers.")
+	Logger.Println("client/metadata :: out of available brokers.")
 
 	if retriesRemaining > 0 {
-		Logger.Printf("Resurrecting dead brokers after %dms... (%d retries remaining)\n", client.config.WaitForElection/time.Millisecond, retriesRemaining)
+		Logger.Printf("client/metadata :: resurrecting dead brokers after %dms... (%d retries remaining)\n", client.config.WaitForElection/time.Millisecond, retriesRemaining)
 		time.Sleep(client.config.WaitForElection)
 		client.resurrectDeadBrokers()
 		return client.refreshMetadata(topics, retriesRemaining-1)
@@ -494,7 +494,7 @@ func (client *Client) backgroundMetadataUpdater() {
 		select {
 		case <-ticker.C:
 			if err := client.RefreshAllMetadata(); err != nil {
-				Logger.Println("Client background metadata update:", err)
+				Logger.Println("client/metadata :: background refresh error:", err)
 			}
 		case <-client.closer:
 			ticker.Stop()
@@ -519,12 +519,12 @@ func (client *Client) update(data *MetadataResponse) ([]string, error) {
 		if client.brokers[broker.ID()] == nil {
 			_ = broker.Open(client.config.DefaultBrokerConf)
 			client.brokers[broker.ID()] = broker
-			Logger.Printf("Registered new broker #%d at %s", broker.ID(), broker.Addr())
+			Logger.Printf("client/metadata :: registered new broker #%d at %s.\n", broker.ID(), broker.Addr())
 		} else if broker.Addr() != client.brokers[broker.ID()].Addr() {
 			safeAsyncClose(client.brokers[broker.ID()])
 			_ = broker.Open(client.config.DefaultBrokerConf)
 			client.brokers[broker.ID()] = broker
-			Logger.Printf("Replaced registered broker #%d with %s", broker.ID(), broker.Addr())
+			Logger.Printf("client/metadata :: replaced registered broker #%d with %s.\n", broker.ID(), broker.Addr())
 		}
 	}
 
