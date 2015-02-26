@@ -22,13 +22,7 @@ func TestConsumerOffsetManual(t *testing.T) {
 		leader.Returns(fetchResponse)
 	}
 
-	client, err := NewClient([]string{seedBroker.Addr()}, nil)
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	master, err := NewConsumer(client, nil)
+	master, err := NewConsumer([]string{seedBroker.Addr()}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +45,6 @@ func TestConsumerOffsetManual(t *testing.T) {
 	}
 
 	safeClose(t, consumer)
-	safeClose(t, client)
 	leader.Close()
 }
 
@@ -72,16 +65,11 @@ func TestConsumerLatestOffset(t *testing.T) {
 	fetchResponse.AddMessage("my_topic", 0, nil, ByteEncoder([]byte{0x00, 0x0E}), 0x010101)
 	leader.Returns(fetchResponse)
 
-	client, err := NewClient([]string{seedBroker.Addr()}, nil)
+	master, err := NewConsumer([]string{seedBroker.Addr()}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	seedBroker.Close()
-
-	master, err := NewConsumer(client, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	consumer, err := master.ConsumePartition("my_topic", 0, OffsetNewest)
 	if err != nil {
@@ -90,7 +78,6 @@ func TestConsumerLatestOffset(t *testing.T) {
 
 	leader.Close()
 	safeClose(t, consumer)
-	safeClose(t, client)
 
 	// we deliver one message, so it should be one higher than we return in the OffsetResponse
 	if consumer.offset != 0x010102 {
@@ -119,12 +106,7 @@ func TestConsumerFunnyOffsets(t *testing.T) {
 	fetchResponse.AddMessage("my_topic", 0, nil, ByteEncoder([]byte{0x00, 0x0E}), int64(5))
 	leader.Returns(fetchResponse)
 
-	client, err := NewClient([]string{seedBroker.Addr()}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	master, err := NewConsumer(client, nil)
+	master, err := NewConsumer([]string{seedBroker.Addr()}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +121,6 @@ func TestConsumerFunnyOffsets(t *testing.T) {
 	leader.Close()
 	seedBroker.Close()
 	safeClose(t, consumer)
-	safeClose(t, client)
 }
 
 func TestConsumerRebalancingMultiplePartitions(t *testing.T) {
@@ -156,12 +137,7 @@ func TestConsumerRebalancingMultiplePartitions(t *testing.T) {
 	seedBroker.Returns(metadataResponse)
 
 	// launch test goroutines
-	client, err := NewClient([]string{seedBroker.Addr()}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	master, err := NewConsumer(client, nil)
+	master, err := NewConsumer([]string{seedBroker.Addr()}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,24 +241,16 @@ func TestConsumerRebalancingMultiplePartitions(t *testing.T) {
 	leader1.Close()
 	leader0.Close()
 	seedBroker.Close()
-	safeClose(t, client)
 }
 
 func ExampleConsumerWithSelect() {
-	client, err := NewClient([]string{"localhost:9092"}, nil)
-	if err != nil {
-		panic(err)
-	} else {
-		fmt.Println("> connected")
-	}
-	defer client.Close()
-
-	master, err := NewConsumer(client, nil)
+	master, err := NewConsumer([]string{"localhost:9092"}, nil)
 	if err != nil {
 		panic(err)
 	} else {
 		fmt.Println("> master consumer ready")
 	}
+	defer master.Close()
 
 	consumer, err := master.ConsumePartition("my_topic", 0, 0)
 	if err != nil {
@@ -310,20 +278,13 @@ consumerLoop:
 }
 
 func ExampleConsumerWithGoroutines() {
-	client, err := NewClient([]string{"localhost:9092"}, nil)
-	if err != nil {
-		panic(err)
-	} else {
-		fmt.Println("> connected")
-	}
-	defer client.Close()
-
-	master, err := NewConsumer(client, nil)
+	master, err := NewConsumer([]string{"localhost:9092"}, nil)
 	if err != nil {
 		panic(err)
 	} else {
 		fmt.Println("> master consumer ready")
 	}
+	defer master.Close()
 
 	consumer, err := master.ConsumePartition("my_topic", 0, 0)
 	if err != nil {
